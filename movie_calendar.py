@@ -4,7 +4,6 @@ from ics import Calendar, Event
 import datetime
 import calendar
 
-# GitHub Secrets에서 API 키를 불러옵니다.
 API_KEY = os.environ.get("TMDB_API_KEY")
 LANGUAGE = "ko-KR"
 REGION = "KR"
@@ -14,7 +13,6 @@ def get_current_month_movies():
         print("API 키를 찾을 수 없습니다.")
         return []
         
-    # 1. 이번 달의 시작일과 마지막 일자 계산
     today = datetime.date.today()
     first_day = today.replace(day=1)
     last_day_of_month = calendar.monthrange(today.year, today.month)[1]
@@ -25,16 +23,35 @@ def get_current_month_movies():
     
     print(f"검색 기간: {start_date} ~ {end_date}")
     
-    # 2. TMDB Discover API를 사용하여 정확한 날짜 범위로 검색 (개봉일 오름차순 정렬)
-    url = f"https://api.themoviedb.org/3/discover/movie?api_key={API_KEY}&language={LANGUAGE}&region={REGION}&primary_release_date.gte={start_date}&primary_release_date.lte={end_date}&sort_by=primary_release_date.asc"
+    all_movies = []
+    page = 1
     
-    response = requests.get(url)
-    
-    if response.status_code == 200:
-        return response.json().get('results', [])
-    else:
-        print(f"데이터를 가져오는데 실패했습니다. 상태 코드: {response.status_code}")
-        return []
+    while True:
+        # with_release_type=2|3 (2: 제한 상영, 3: 극장 개봉)
+        url = (
+            f"https://api.themoviedb.org/3/discover/movie?"
+            f"api_key={API_KEY}&language={LANGUAGE}&region={REGION}&"
+            f"release_date.gte={start_date}&release_date.lte={end_date}&"
+            f"with_release_type=2|3&sort_by=release_date.asc&page={page}"
+        )
+        
+        response = requests.get(url)
+        if response.status_code != 200:
+            print(f"데이터 조회 실패 (페이지 {page}): {response.status_code}")
+            break
+            
+        data = response.json()
+        results = data.get('results', [])
+        all_movies.extend(results)
+        
+        total_pages = data.get('total_pages', 1)
+        if page >= total_pages:
+            break
+            
+        page += 1
+
+    print(f"총 {len(all_movies)}편의 개봉작을 수집했습니다.")
+    return all_movies
 
 def create_movie_calendar(movies):
     c = Calendar()
@@ -48,7 +65,7 @@ def create_movie_calendar(movies):
             continue
             
         e = Event()
-        e.name = f"🎬 개봉: {title}"
+        e.name = f"{title}"
         e.begin = release_date
         e.make_all_day()
         e.description = overview
@@ -58,7 +75,7 @@ def create_movie_calendar(movies):
     with open('upcoming_movies.ics', 'w', encoding='utf-8') as f:
         f.writelines(c.serialize_iter())
         
-    print("성공적으로 이번 달 영화 캘린더 파일(upcoming_movies.ics)이 갱신되었습니다!")
+    print("성공적으로 upcoming_movies.ics 파일이 갱신되었습니다!")
 
 if __name__ == "__main__":
     movies = get_current_month_movies()
